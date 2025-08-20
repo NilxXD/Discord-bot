@@ -4,25 +4,19 @@ const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent,
+  ],
 });
-
-const PREFIX = '!'; // try: !ping
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-client.on('messageCreate', (msg) => {
-  if (msg.author.bot) return;
-  if (!msg.content.startsWith(PREFIX)) return;
-
-  const [command] = msg.content.slice(PREFIX.length).trim().split(/\s+/);
-
-  if (command === 'ping') {
-    msg.reply('Pong! 🏓');
+client.on('messageCreate', (message) => {
+  if (message.content === '!ping') {
+    message.reply('Pong!');
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+// Use environment variable for safety
+client.login(process.env.TOKEN);
