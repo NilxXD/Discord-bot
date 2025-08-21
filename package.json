@@ -1,7 +1,7 @@
 {
   "name": "discord-bot",
   "version": "1.0.0",
-  "type": "module",              // 👈 enables import/export
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
