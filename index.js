@@ -1,24 +1,43 @@
+// index.js
+
 const { Client, GatewayIntentBits } = require("discord.js");
 const express = require("express");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// --- Keep-Alive Web Server ---
-app.get("/", (req, res) => {
-  res.send("Bot is running!");
-});
-app.listen(PORT, () => {
-  console.log(`Uptime server running on port ${PORT}`);
-});
-
-// --- Discord Bot ---
+// ===== Discord Bot =====
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds, // for slash commands & guild events
+    GatewayIntentBits.GuildMessages, // for reading messages
+    GatewayIntentBits.MessageContent // for message content (needs to be enabled in Discord Dev Portal)
+  ],
 });
 
+// When bot is ready
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
+});
+
+// Example message listener
+client.on("messageCreate", (message) => {
+  if (message.content === "!ping") {
+    message.reply("🏓 Pong!");
+  }
+});
+
+// Login using environment variable
+client.login(process.env.DISCORD_TOKEN);
+
+// ===== Express Keep-Alive Server =====
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Bot is running ✅");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🌐 Express server listening on port ${PORT}`);
+}); in as ${client.user.tag}`);
 });
 
 client.on("messageCreate", (message) => {
