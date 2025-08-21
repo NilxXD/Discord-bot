@@ -1,6 +1,6 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import express from "express";
-import fetch from "node-fetch";       // ✅ works with ESM
+import fetch from "node-fetch";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -22,7 +22,7 @@ const client = new Client({
   ]
 });
 
-client.on('clientReady', () => {
+client.on('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
@@ -36,7 +36,7 @@ async function askAI(prompt) {
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.HF_TOKEN}`,
+          "Authorization": `Bearer ${process.env.HF_TOKES}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({ inputs: prompt })
@@ -44,7 +44,9 @@ async function askAI(prompt) {
     );
     const data = await response.json();
     if (data.error) return "⚠️ Model is loading or busy. Try again!";
-    return data[0]?.generated_text || "🤖 I couldn’t think of an answer.";
+    if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
+    if (data.generated_text) return data.generated_text;
+    return "🤖 I couldn’t think of an answer.";
   } catch (err) {
     console.error(err);
     return "❌ Error connecting to AI.";
@@ -54,7 +56,7 @@ async function askAI(prompt) {
 // =========================
 // Cooldowns + Request Queue
 // =========================
-const cooldowns = new Map(); // userId → timestamp
+const cooldowns = new Map();
 const queue = [];
 let processing = false;
 
@@ -72,7 +74,7 @@ async function processQueue() {
   }
 
   processing = false;
-  setTimeout(processQueue, 1500);
+  setTimeout(processQueue, 1500); // 1.5s delay between requests
 }
 
 // =========================
@@ -82,17 +84,13 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   // -------------------------
-  // Core commands
+  // Basic commands
   // -------------------------
-  if (message.content === "!ping") {
-    return message.reply("Pong! 🏓");
-  }
-  if (message.content === "!hello") {
-    return message.reply("Hello there! 👋");
-  }
+  if (message.content === "!ping") return message.reply("Pong! 🏓");
+  if (message.content === "!hello") return message.reply("Hello there! 👋");
 
   // -------------------------
-  // AI commands with cooldown
+  // AI / Fun commands
   // -------------------------
   const aiCommands = {
     "!ask": (msg) => msg.content.replace("!ask", "").trim(),
@@ -104,14 +102,11 @@ client.on("messageCreate", async (message) => {
     "!meme": () => "Write a funny meme caption in one line."
   };
 
-  const command = Object.keys(aiCommands).find((c) =>
-    message.content.startsWith(c)
-  );
+  const command = Object.keys(aiCommands).find((c) => message.content.startsWith(c));
   if (command) {
     const userId = message.author.id;
     const now = Date.now();
 
-    // Cooldown: 5 seconds per user
     if (cooldowns.has(userId) && now - cooldowns.get(userId) < 5000) {
       return message.reply("⏳ Please wait a few seconds before using another AI command.");
     }
@@ -130,16 +125,12 @@ client.on("messageCreate", async (message) => {
   // -------------------------
   if (message.content.startsWith("!remind")) {
     const parts = message.content.split(" ");
-    if (parts.length < 3) {
-      return message.reply("⏰ Usage: !remind <time-in-seconds> <task>");
-    }
+    if (parts.length < 3) return message.reply("⏰ Usage: !remind <time-in-seconds> <task>");
 
     const time = parseInt(parts[1]);
     const task = parts.slice(2).join(" ");
 
-    if (isNaN(time)) {
-      return message.reply("⚠️ Time must be a number (in seconds).");
-    }
+    if (isNaN(time)) return message.reply("⚠️ Time must be a number (in seconds).");
 
     message.reply(`✅ Okay! I will remind you in ${time} seconds: **${task}**`);
     setTimeout(() => {
