@@ -1,14 +1,15 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const express = require('express');
-const fetch = require('node-fetch'); // for Hugging Face API
-require('dotenv').config();
+import { Client, GatewayIntentBits } from "discord.js";
+import express from "express";
+import fetch from "node-fetch";       // ✅ works with ESM
+import dotenv from "dotenv";
+dotenv.config();
 
 // =========================
 // Uptime server
 // =========================
 const app = express();
-app.get('/', (req, res) => res.send('Bot is alive!'));
-app.listen(3000, () => console.log('Uptime server running'));
+app.get("/", (req, res) => res.send("Bot is alive!"));
+app.listen(3000, () => console.log("Uptime server running"));
 
 // =========================
 // Discord bot client
@@ -21,7 +22,7 @@ const client = new Client({
   ]
 });
 
-client.on('ready', () => {
+client.on("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
@@ -71,23 +72,23 @@ async function processQueue() {
   }
 
   processing = false;
-  setTimeout(processQueue, 1500); // wait 1.5s before next request (prevents spam on HF API)
+  setTimeout(processQueue, 1500);
 }
 
 // =========================
 // Message Handling
 // =========================
-client.on('messageCreate', async (message) => {
+client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   // -------------------------
   // Core commands
   // -------------------------
-  if (message.content === '!ping') {
-    return message.reply('Pong! 🏓');
+  if (message.content === "!ping") {
+    return message.reply("Pong! 🏓");
   }
-  if (message.content === '!hello') {
-    return message.reply('Hello there! 👋');
+  if (message.content === "!hello") {
+    return message.reply("Hello there! 👋");
   }
 
   // -------------------------
@@ -103,7 +104,9 @@ client.on('messageCreate', async (message) => {
     "!meme": () => "Write a funny meme caption in one line."
   };
 
-  const command = Object.keys(aiCommands).find(c => message.content.startsWith(c));
+  const command = Object.keys(aiCommands).find((c) =>
+    message.content.startsWith(c)
+  );
   if (command) {
     const userId = message.author.id;
     const now = Date.now();
@@ -117,7 +120,6 @@ client.on('messageCreate', async (message) => {
     const prompt = aiCommands[command](message);
     if (!prompt) return message.reply("❓ Please provide a valid question/text.");
 
-    // Add to queue
     queue.push({ message, prompt });
     processQueue();
     return;
@@ -126,14 +128,14 @@ client.on('messageCreate', async (message) => {
   // -------------------------
   // Reminder command
   // -------------------------
-  if (message.content.startsWith('!remind')) {
-    const parts = message.content.split(' ');
+  if (message.content.startsWith("!remind")) {
+    const parts = message.content.split(" ");
     if (parts.length < 3) {
       return message.reply("⏰ Usage: !remind <time-in-seconds> <task>");
     }
 
     const time = parseInt(parts[1]);
-    const task = parts.slice(2).join(' ');
+    const task = parts.slice(2).join(" ");
 
     if (isNaN(time)) {
       return message.reply("⚠️ Time must be a number (in seconds).");
