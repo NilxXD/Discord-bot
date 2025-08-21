@@ -1,25 +1,34 @@
+const { Client, GatewayIntentBits } = require("discord.js");
 const express = require("express");
+
 const app = express();
+const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => res.send("Bot is alive!"));
-app.listen(3000, () => console.log("Web server running on port 3000"));
-
-const { Client, GatewayIntentBits } = require('discord.js');
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+// --- Keep-Alive Web Server ---
+app.get("/", (req, res) => {
+  res.send("Bot is running!");
+});
+app.listen(PORT, () => {
+  console.log(`Uptime server running on port ${PORT}`);
 });
 
-client.once('ready', () => {
+// --- Discord Bot ---
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
+
+client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-client.on('messageCreate', (message) => {
-  if (message.content === '!ping') {
+client.on("messageCreate", (message) => {
+  if (message.content === "!ping") {
+    message.reply("Pong!");
+  }
+});
+
+// Login with token from Render environment
+client.login(process.env.DISCORD_TOKEN); === '!ping') {
     message.reply('Pong!');
   }
 });
