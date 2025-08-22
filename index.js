@@ -2,6 +2,11 @@ import { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } from "di
 import express from "express";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+
+// import truth & dare JSON
+import truths from "./truths.json" assert { type: "json" };
+import dares from "./dares.json" assert { type: "json" };
+
 dotenv.config();
 
 // =========================
@@ -22,34 +27,12 @@ const client = new Client({
 // Slash Commands Registration
 // =========================
 const commands = [
-  new SlashCommandBuilder().setName('ping').setDescription('Pong!'),
+  new SlashCommandBuilder().setName('ping').setDescription('Check if bot is alive'),
   new SlashCommandBuilder().setName('hello').setDescription('Say hello!'),
-  new SlashCommandBuilder().setName('meme').setDescription('Get a random meme'),
-  new SlashCommandBuilder().setName('joke').setDescription('Get a random joke'),
+  new SlashCommandBuilder().setName('funny').setDescription('Get a random joke or meme'),
   new SlashCommandBuilder().setName('fact').setDescription('Get a random fact'),
-  new SlashCommandBuilder().setName('truth').setDescription('Get a truth for truth or dare'),
-  new SlashCommandBuilder().setName('dare').setDescription('Get a dare for truth or dare'),
-  new SlashCommandBuilder()
-    .setName('study')
-    .setDescription('Get a study problem')
-    .addStringOption(option => 
-      option.setName('subject')
-            .setDescription('Choose subject')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Math', value: 'math' },
-              { name: 'Physics', value: 'physics' },
-              { name: 'Chemistry', value: 'chemistry' }
-            ))
-    .addStringOption(option => 
-      option.setName('difficulty')
-            .setDescription('Choose difficulty')
-            .setRequired(true)
-            .addChoices(
-              { name: 'Easy', value: 'easy' },
-              { name: 'Medium', value: 'medium' },
-              { name: 'Hard', value: 'hard' }
-            )),
+  new SlashCommandBuilder().setName('truth').setDescription('Get a random truth question'),
+  new SlashCommandBuilder().setName('dare').setDescription('Get a random dare'),
   new SlashCommandBuilder()
     .setName('remind')
     .setDescription('Set a reminder')
@@ -121,46 +104,40 @@ client.on('interactionCreate', async interaction => {
   cooldowns.set(userId, now);
 
   switch(interaction.commandName) {
-    case 'ping':
-      return interaction.reply('Pong! 🏓');
+    case 'ping': {
+      const responses = [
+        "I’m alive! 🚀",
+        "Yes yes, I hear you 👂",
+        "Beep boop 🤖",
+        "Ping received. Pong denied. 🏓❌",
+        "Alive and kicking 💥"
+      ];
+      return interaction.reply(responses[Math.floor(Math.random() * responses.length)]);
+    }
     case 'hello':
       return interaction.reply('Hello there! 👋');
-    case 'meme': {
-      const meme = await fetchRedditRandom('memes');
-      return interaction.reply(meme);
-    }
-    case 'joke': {
-      const joke = await fetchJSON('https://v2.jokeapi.dev/joke/Any');
-      if (!joke) return interaction.reply('❌ Could not fetch joke.');
-      const text = joke.type === 'single' ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
-      return interaction.reply(text);
+    case 'funny': {
+      const choice = Math.random() < 0.5 ? 'joke' : 'meme';
+
+      if (choice === 'meme') {
+        const meme = await fetchRedditRandom('memes');
+        return interaction.reply(meme);
+      } else {
+        const joke = await fetchJSON('https://v2.jokeapi.dev/joke/Any?safe-mode');
+        if (!joke) return interaction.reply('❌ Could not fetch joke.');
+        const text = joke.type === 'single' ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
+        return interaction.reply(text);
+      }
     }
     case 'fact': {
       const factData = await fetchJSON('https://uselessfacts.jsph.pl/random.json?language=en');
       return interaction.reply(factData?.text || '❌ Could not fetch fact.');
     }
     case 'truth': {
-      const truths = await fetchJSON('https://raw.githubusercontent.com/Anishukla/Truth-or-Dare/main/truth.json');
-      return interaction.reply(truths ? truths[Math.floor(Math.random()*truths.length)] : '❌ Could not fetch truth.');
+      return interaction.reply(truths[Math.floor(Math.random() * truths.length)]);
     }
     case 'dare': {
-      const dares = await fetchJSON('https://raw.githubusercontent.com/Anishukla/Truth-or-Dare/main/dare.json');
-      return interaction.reply(dares ? dares[Math.floor(Math.random()*dares.length)] : '❌ Could not fetch dare.');
-    }
-    case 'study': {
-      const subject = interaction.options.getString('subject');
-      const difficulty = interaction.options.getString('difficulty');
-      let url;
-      if (subject === 'math') url = 'https://raw.githubusercontent.com/Mechatronix/Math-Questions/main/questions.json';
-      else if (subject === 'physics') url = 'https://raw.githubusercontent.com/kartikeya2401/IIT-JEE-Question-Bank/main/Physics.json';
-      else if (subject === 'chemistry') url = 'https://raw.githubusercontent.com/kartikeya2401/IIT-JEE-Question-Bank/main/Chemistry.json';
-      
-      const questions = await fetchJSON(url);
-      if (!questions) return interaction.reply('❌ Could not fetch study problems.');
-
-      const filtered = questions.filter(q => q.difficulty?.toLowerCase() === difficulty.toLowerCase());
-      const question = filtered.length ? filtered[Math.floor(Math.random()*filtered.length)] : questions[Math.floor(Math.random()*questions.length)];
-      return interaction.reply(question.question || JSON.stringify(question));
+      return interaction.reply(dares[Math.floor(Math.random() * dares.length)]);
     }
     case 'remind': {
       const time = interaction.options.getInteger('time');
