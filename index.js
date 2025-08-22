@@ -1,238 +1,181 @@
-import {
-  Client,
-  GatewayIntentBits,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-} from "discord.js";
-import express from "express";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
+const { 
+  Client, 
+  GatewayIntentBits, 
+  Partials, 
+  SlashCommandBuilder, 
+  Routes, 
+  REST, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle 
+} = require('discord.js');
+const express = require('express');
+const fetch = require('node-fetch');
+require('dotenv').config();
 
-// import truth & dare JSON
-import truths from "./truths.json" assert { type: "json" };
-import dares from "./dares.json" assert { type: "json" };
-
-dotenv.config();
-
-// =========================
-// Uptime server
-// =========================
-const app = express();
-app.get("/", (req, res) => res.send("Bot is alive!"));
-app.listen(3000, () => console.log("Uptime server running"));
-
-// =========================
-// Discord bot client
-// =========================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Channel],
 });
 
-// =========================
-// Slash Commands Registration
-// =========================
-const commands = [
-  new SlashCommandBuilder().setName("ping").setDescription("Check if bot is alive"),
-  new SlashCommandBuilder().setName("hello").setDescription("Say hello!"),
-  new SlashCommandBuilder().setName("chill").setDescription("Get a random joke or meme"),
-  new SlashCommandBuilder().setName("fact").setDescription("Get a random fact"),
-  new SlashCommandBuilder().setName("truthdare").setDescription("Play Truth or Dare"),
-  new SlashCommandBuilder()
-    .setName("remind")
-    .setDescription("Set a reminder")
-    .addIntegerOption((option) =>
-      option.setName("time").setDescription("Time in seconds").setRequired(true)
-    )
-    .addStringOption((option) =>
-      option.setName("task").setDescription("Task to be reminded of").setRequired(true)
-    ),
-].map((cmd) => cmd.toJSON());
+// ================== Express keep-alive ==================
+const app = express();
+app.get('/', (req, res) => res.send('Bot is alive!'));
+app.listen(3000, () => console.log('Uptime server started.'));
 
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+// ================== Slash Commands ==================
+const commands = [
+  new SlashCommandBuilder().setName('funny').setDescription('Get a funny meme'),
+  new SlashCommandBuilder().setName('chill').setDescription('Get a chill meme'),
+  new SlashCommandBuilder().setName('truthordare').setDescription('Start a Truth or Dare game')
+].map(cmd => cmd.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+
 (async () => {
   try {
-    console.log("Registering slash commands...");
-    // clear and re-register
-    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
+    console.log('Registering slash commands...');
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
-    console.log("✅ Slash commands registered!");
-  } catch (err) {
-    console.error(err);
+    console.log('Commands registered ✅');
+  } catch (error) {
+    console.error(error);
   }
 })();
 
-// =========================
-// Cooldowns
-// =========================
-const cooldowns = new Map();
-
-// =========================
-// Truth or Dare Session Tracker
-// =========================
-const truthDareSessions = new Map(); // { userId: { count } }
-
-// =========================
-// Helper Functions
-// =========================
+// ================== Meme Fetching ==================
 async function fetchRedditMeme(subreddit) {
   try {
-    const res = await fetch(`https://www.reddit.com/r/${subreddit}/random/.json`);
+    const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=50`;
+    const res = await fetch(url);
     const data = await res.json();
-    const post = data[0]?.data?.children[0]?.data;
 
-    if (!post) return null;
+    if (!data.data) return null;
+    const posts = data.data.children.filter(p => p.data && !p.data.over_18);
 
-    // Only accept safe images
-    if (post.url && (post.url.endsWith(".jpg") || post.url.endsWith(".png") || post.url.endsWith(".gif"))) {
-      return { title: post.title, image: post.url };
-    }
+    // filter image posts
+    const imgPosts = posts.filter(p => /\.(jpg|jpeg|png|gif|webp)$/i.test(p.data.url));
+    const pick = imgPosts.length > 0 
+      ? imgPosts[Math.floor(Math.random() * imgPosts.length)] 
+      : posts[Math.floor(Math.random() * posts.length)];
 
-    // fallback: just send the title as text
-    return { title: post.title || "Here’s something funny!", image: null };
+    return {
+      title: pick.data.title,
+      url: pick.data.url,
+      postLink: `https://reddit.com${pick.data.permalink}`
+    };
   } catch (err) {
     console.error(err);
     return null;
   }
 }
 
-async function fetchJSON(url) {
-  try {
-    const res = await fetch(url);
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
+// ================== Truth or Dare Questions ==================
+const truths = [
+  "What’s the most embarrassing thing you’ve ever done?",
+  "Have you ever kept a big secret from your best friend?",
+  "What’s your biggest fear?"
+];
 
-function getRandom(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+const dares = [
+  "Send a funny meme in this chat right now!",
+  "Speak in emojis only for the next 2 minutes.",
+  "Do 10 pushups and tell us when you’re done!"
+];
 
-function buildTruthDareEmbed(user, type, count) {
-  const isTruth = type === "truth";
-  const question = isTruth ? getRandom(truths) : getRandom(dares);
+let cardCounter = 0;
 
-  return new EmbedBuilder()
-    .setAuthor({ name: `Requested by ${user.username}` })
-    .setDescription(`**${question}**`)
-    .setFooter({ text: `Type: ${isTruth ? "Truth" : "Dare"} | Card #${count}` })
-    .setColor(isTruth ? "#3399FF" : "#FF5733");
-}
+// ================== Event Handlers ==================
+client.once('ready', () => {
+  console.log(`✅ Logged in as ${client.user.tag}`);
+});
 
-function buildTruthDareButtons() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("truth").setLabel("Truth").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("dare").setLabel("Dare").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("random").setLabel("Random").setStyle(ButtonStyle.Secondary)
-  );
-}
+client.on('interactionCreate', async interaction => {
+  if (interaction.isChatInputCommand()) {
+    // ----- FUNNY -----
+    if (interaction.commandName === 'funny') {
+      await interaction.deferReply();
+      const meme = await fetchRedditMeme('memes');
+      if (!meme) return interaction.editReply("Couldn't fetch a meme right now 😢");
 
-// =========================
-// Interaction Handling
-// =========================
-client.on("interactionCreate", async (interaction) => {
-  if (interaction.isCommand()) {
-    const userId = interaction.user.id;
-    const now = Date.now();
-    if (cooldowns.has(userId) && now - cooldowns.get(userId) < 3000) {
-      return interaction.reply("⏳ Please wait a few seconds before using another command.");
+      const embed = new EmbedBuilder()
+        .setTitle(meme.title)
+        .setURL(meme.postLink)
+        .setImage(meme.url)
+        .setColor('Random');
+
+      await interaction.editReply({ embeds: [embed] });
     }
-    cooldowns.set(userId, now);
 
-    switch (interaction.commandName) {
-      case "ping": {
-        const responses = [
-          "I’m alive! 🚀",
-          "Yes yes, I hear you 👂",
-          "Beep boop 🤖",
-          "Ping received. Pong denied. 🏓❌",
-          "Alive and kicking 💥",
-        ];
-        return interaction.reply(responses[Math.floor(Math.random() * responses.length)]);
-      }
-      case "hello":
-        return interaction.reply("Hello there! 👋");
+    // ----- CHILL -----
+    if (interaction.commandName === 'chill') {
+      await interaction.deferReply();
+      const meme = await fetchRedditMeme('wholesomememes');
+      if (!meme) return interaction.editReply("Couldn't fetch a chill meme right now 😢");
 
-      case "chill": {
-        const choice = Math.random() < 0.5 ? "joke" : "meme";
+      const embed = new EmbedBuilder()
+        .setTitle(meme.title)
+        .setURL(meme.postLink)
+        .setImage(meme.url)
+        .setColor('Random');
 
-        if (choice === "meme") {
-          const meme = await fetchRedditMeme("memes");
-          if (!meme) return interaction.reply("😅 Couldn't get a meme right now, try again!");
+      await interaction.editReply({ embeds: [embed] });
+    }
 
-          const embed = new EmbedBuilder()
-            .setTitle(meme.title || "Random Meme")
-            .setColor("#00CC99");
+    // ----- TRUTH OR DARE -----
+    if (interaction.commandName === 'truthordare') {
+      cardCounter++;
+      const type = Math.random() > 0.5 ? 'Truth' : 'Dare';
+      const question = type === 'Truth'
+        ? truths[Math.floor(Math.random() * truths.length)]
+        : dares[Math.floor(Math.random() * dares.length)];
 
-          if (meme.image) embed.setImage(meme.image);
+      const embed = new EmbedBuilder()
+        .setAuthor({ name: `Requested by ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+        .setDescription(`**${question}**`)
+        .setColor('Random')
+        .setFooter({ text: `Type: ${type} | Card #${cardCounter}` });
 
-          return interaction.reply({ embeds: [embed] });
-        } else {
-          const joke = await fetchJSON("https://v2.jokeapi.dev/joke/Any?safe-mode");
-          if (!joke) return interaction.reply("😅 Couldn't think of a joke right now!");
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('truth').setLabel('Truth').setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId('dare').setLabel('Dare').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('random').setLabel('Random').setStyle(ButtonStyle.Secondary)
+      );
 
-          const text = joke.type === "single" ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
-          return interaction.reply(text);
-        }
-      }
-
-      case "fact": {
-        const factData = await fetchJSON("https://uselessfacts.jsph.pl/random.json?language=en");
-        return interaction.reply(factData?.text || "🤔 Couldn't come up with a fact right now!");
-      }
-
-      case "truthdare": {
-        truthDareSessions.set(interaction.user.id, { count: 0 });
-
-        const embed = new EmbedBuilder()
-          .setAuthor({ name: `Requested by ${interaction.user.username}` })
-          .setTitle("🎭 Truth or Dare")
-          .setDescription("Press a button below to get started!")
-          .setColor("#FF00FF");
-
-        return interaction.reply({ embeds: [embed], components: [buildTruthDareButtons()] });
-      }
-
-      case "remind": {
-        const time = interaction.options.getInteger("time");
-        const task = interaction.options.getString("task");
-
-        if (time <= 0) return interaction.reply("⚠️ Time must be greater than 0 seconds.");
-
-        await interaction.reply(`✅ Okay! I will remind you in ${time} seconds: **${task}**`);
-        setTimeout(() => {
-          interaction.followUp(`⏰ Reminder: ${task}`);
-        }, time * 1000);
-        break;
-      }
+      await interaction.reply({ embeds: [embed], components: [row] });
     }
   }
 
-  // Button interactions for Truth/Dare
+  // ----- TRUTH/DARE BUTTONS -----
   if (interaction.isButton()) {
-    await interaction.deferUpdate().catch(() => {});
+    await interaction.deferReply({ ephemeral: true });
 
-    let type = interaction.customId;
-    if (type === "random") type = Math.random() > 0.5 ? "truth" : "dare";
+    let type;
+    if (interaction.customId === 'truth') type = 'Truth';
+    if (interaction.customId === 'dare') type = 'Dare';
+    if (interaction.customId === 'random') type = Math.random() > 0.5 ? 'Truth' : 'Dare';
 
-    const session = truthDareSessions.get(interaction.user.id) || { count: 0 };
-    session.count += 1;
+    cardCounter++;
+    const question = type === 'Truth'
+      ? truths[Math.floor(Math.random() * truths.length)]
+      : dares[Math.floor(Math.random() * dares.length)];
 
-    const embed = buildTruthDareEmbed(interaction.user, type, session.count);
+    const embed = new EmbedBuilder()
+      .setAuthor({ name: `Requested by ${interaction.user.username}`, iconURL: interaction.user.displayAvatarURL() })
+      .setDescription(`**${question}**`)
+      .setColor('Random')
+      .setFooter({ text: `Type: ${type} | Card #${cardCounter}` });
 
-    await interaction.message.reply({
-      embeds: [embed],
-      components: [buildTruthDareButtons()],
-      allowedMentions: { repliedUser: true },
-    });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('truth').setLabel('Truth').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('dare').setLabel('Dare').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId('random').setLabel('Random').setStyle(ButtonStyle.Secondary)
+    );
 
-    truthDareSessions.set(interaction.user.id, session);
+    // reply to old card (thread-style ping)
+    const replied = await interaction.message.reply({ embeds: [embed], components: [row] });
+    await interaction.editReply({ content: "✅ New card created!", ephemeral: true });
   }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+client.login(process.env.TOKEN);
