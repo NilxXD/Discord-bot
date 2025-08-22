@@ -104,9 +104,7 @@ function buildTruthDareEmbed(user, type) {
 
   return new EmbedBuilder()
     .setAuthor({ name: `Requested by ${user.username}` })
-    .setTitle(isTruth ? "🎭 TRUTH" : "🔥 DARE")
-    .setDescription(question)
-    .setFooter({ text: "Pick another one below 👇" })
+    .setDescription(`**${question}**\n\nType: ${isTruth ? "Truth" : "Dare"}`)
     .setColor(isTruth ? "#3399FF" : "#FF5733");
 }
 
@@ -165,7 +163,6 @@ client.on("interactionCreate", async (interaction) => {
           .setAuthor({ name: `Requested by ${interaction.user.username}` })
           .setTitle("🎭 Truth or Dare")
           .setDescription("Press a button below to get started!")
-          .setFooter({ text: "Have fun playing!" })
           .setColor("#FF00FF");
 
         return interaction.reply({ embeds: [embed], components: [buildTruthDareButtons()] });
@@ -191,7 +188,8 @@ client.on("interactionCreate", async (interaction) => {
     if (type === "random") type = Math.random() > 0.5 ? "truth" : "dare";
 
     const embed = buildTruthDareEmbed(interaction.user, type);
-    return interaction.update({ embeds: [embed], components: [buildTruthDareButtons()] });
+    // Instead of updating, send a new message
+    return interaction.channel.send({ embeds: [embed], components: [buildTruthDareButtons()] });
   }
 });
 
