@@ -26,10 +26,7 @@ client.on('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
 });
 
-// =========================
-// Hugging Face AI Helper
-// =========================
-async function askAI(prompt) {
+async function askAI(prompt, retries = 3) {
   try {
     const response = await fetch(
       "https://api-inference.huggingface.co/models/google/flan-t5-small",
@@ -42,14 +39,33 @@ async function askAI(prompt) {
         body: JSON.stringify({ inputs: prompt })
       }
     );
+
+    console.log("HF status:", response.status); // debug status
     const data = await response.json();
-    if (data.error) return "⚠️ Model is loading or busy. Try again!";
+    console.log("HF data:", data); // debug returned data
+
+    if (data.error) {
+      if (retries > 0) {
+        console.log("⚡ Model busy. Retrying in 2 seconds...");
+        await new Promise(res => setTimeout(res, 2000));
+        return askAI(prompt, retries - 1);
+      } else {
+        return "⚠️ Model is busy or loading. Try again in a moment!";
+      }
+    }
+
     if (Array.isArray(data) && data[0]?.generated_text) return data[0].generated_text;
     if (data.generated_text) return data.generated_text;
+
     return "🤖 I couldn’t think of an answer.";
   } catch (err) {
-    console.error(err);
-    return "❌ Error connecting to AI.";
+    console.error("HF connection error:", err);
+    if (retries > 0) {
+      console.log("🔄 Retrying connection in 2 seconds...");
+      await new Promise(res => setTimeout(res, 2000));
+      return askAI(prompt, retries - 1);
+    }
+    return "❌ Error connecting to AI. Check your HF_TOKES or network.";
   }
 }
 
