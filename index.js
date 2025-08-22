@@ -27,7 +27,7 @@ app.get("/", (req, res) => res.send("Bot is alive!"));
 app.listen(3000, () => console.log("Uptime server running"));
 
 // =========================
-// Discord bot client
+ // Discord bot client
 // =========================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -72,7 +72,7 @@ const cooldowns = new Map();
 // =========================
 // Truth or Dare Session Tracker
 // =========================
-const truthDareSessions = new Map(); // { userId: { count, lastMessageId } }
+const truthDareSessions = new Map(); // { userId: { count } }
 
 // =========================
 // Helper Functions
@@ -165,7 +165,7 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply(factData?.text || "❌ Could not fetch fact.");
       }
       case "truthdare": {
-        truthDareSessions.set(interaction.user.id, { count: 0, lastMessageId: null });
+        truthDareSessions.set(interaction.user.id, { count: 0 });
 
         const embed = new EmbedBuilder()
           .setAuthor({ name: `Requested by ${interaction.user.username}` })
@@ -192,26 +192,25 @@ client.on("interactionCreate", async (interaction) => {
 
   // Button interactions for Truth/Dare
   if (interaction.isButton()) {
-    await interaction.deferUpdate(); // prevent "interaction failed"
+    // Ack the click so the button doesn't show "Interaction Failed"
+    await interaction.deferUpdate().catch(() => {});
 
     let type = interaction.customId;
     if (type === "random") type = Math.random() > 0.5 ? "truth" : "dare";
 
-    const session = truthDareSessions.get(interaction.user.id) || { count: 0, lastMessageId: null };
+    // Per-user card counter
+    const session = truthDareSessions.get(interaction.user.id) || { count: 0 };
     session.count += 1;
 
     const embed = buildTruthDareEmbed(interaction.user, type, session.count);
-    const newMsg = await interaction.channel.send({
+
+    // Reply to the message that the button belongs to (creates the reply thread + ping)
+    await interaction.message.reply({
       embeds: [embed],
       components: [buildTruthDareButtons()],
+      allowedMentions: { repliedUser: true }, // ping the referenced message's author
     });
 
-    // Ping old card if it exists
-    if (session.lastMessageId) {
-      await interaction.channel.send(`🔗 Previous card: <https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${session.lastMessageId}>`);
-    }
-
-    session.lastMessageId = newMsg.id;
     truthDareSessions.set(interaction.user.id, session);
   }
 });
