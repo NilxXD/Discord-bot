@@ -57,6 +57,8 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
     console.log("Registering slash commands...");
+    // clear and re-register
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     console.log("✅ Slash commands registered!");
   } catch (err) {
@@ -81,18 +83,17 @@ async function fetchRedditMeme(subreddit) {
   try {
     const res = await fetch(`https://www.reddit.com/r/${subreddit}/random/.json`);
     const data = await res.json();
-    const post = data[0].data.children[0].data;
+    const post = data[0]?.data?.children[0]?.data;
 
-    // Prefer posts that are images
+    if (!post) return null;
+
+    // Only accept safe images
     if (post.url && (post.url.endsWith(".jpg") || post.url.endsWith(".png") || post.url.endsWith(".gif"))) {
-      return {
-        title: post.title,
-        image: post.url,
-      };
+      return { title: post.title, image: post.url };
     }
 
-    // fallback if not image
-    return { title: post.title, image: null };
+    // fallback: just send the title as text
+    return { title: post.title || "Here’s something funny!", image: null };
   } catch (err) {
     console.error(err);
     return null;
@@ -102,8 +103,7 @@ async function fetchRedditMeme(subreddit) {
 async function fetchJSON(url) {
   try {
     const res = await fetch(url);
-    const data = await res.json();
-    return data;
+    return await res.json();
   } catch {
     return null;
   }
@@ -157,12 +157,13 @@ client.on("interactionCreate", async (interaction) => {
       }
       case "hello":
         return interaction.reply("Hello there! 👋");
+
       case "chill": {
         const choice = Math.random() < 0.5 ? "joke" : "meme";
 
         if (choice === "meme") {
           const meme = await fetchRedditMeme("memes");
-          if (!meme) return interaction.reply("😅 Couldn't find a meme right now, try again!");
+          if (!meme) return interaction.reply("😅 Couldn't get a meme right now, try again!");
 
           const embed = new EmbedBuilder()
             .setTitle(meme.title || "Random Meme")
@@ -173,16 +174,18 @@ client.on("interactionCreate", async (interaction) => {
           return interaction.reply({ embeds: [embed] });
         } else {
           const joke = await fetchJSON("https://v2.jokeapi.dev/joke/Any?safe-mode");
-          if (!joke) return interaction.reply("😅 Couldn't come up with a joke right now!");
+          if (!joke) return interaction.reply("😅 Couldn't think of a joke right now!");
 
           const text = joke.type === "single" ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
           return interaction.reply(text);
         }
       }
+
       case "fact": {
         const factData = await fetchJSON("https://uselessfacts.jsph.pl/random.json?language=en");
-        return interaction.reply(factData?.text || "🤔 Couldn't think of a fact right now!");
+        return interaction.reply(factData?.text || "🤔 Couldn't come up with a fact right now!");
       }
+
       case "truthdare": {
         truthDareSessions.set(interaction.user.id, { count: 0 });
 
@@ -194,6 +197,7 @@ client.on("interactionCreate", async (interaction) => {
 
         return interaction.reply({ embeds: [embed], components: [buildTruthDareButtons()] });
       }
+
       case "remind": {
         const time = interaction.options.getInteger("time");
         const task = interaction.options.getString("task");
@@ -211,23 +215,20 @@ client.on("interactionCreate", async (interaction) => {
 
   // Button interactions for Truth/Dare
   if (interaction.isButton()) {
-    // Ack the click so the button doesn't show "Interaction Failed"
     await interaction.deferUpdate().catch(() => {});
 
     let type = interaction.customId;
     if (type === "random") type = Math.random() > 0.5 ? "truth" : "dare";
 
-    // Per-user card counter
     const session = truthDareSessions.get(interaction.user.id) || { count: 0 };
     session.count += 1;
 
     const embed = buildTruthDareEmbed(interaction.user, type, session.count);
 
-    // Reply to the message that the button belongs to (creates the reply thread + ping)
     await interaction.message.reply({
       embeds: [embed],
       components: [buildTruthDareButtons()],
-      allowedMentions: { repliedUser: true }, // ping the referenced message's author
+      allowedMentions: { repliedUser: true },
     });
 
     truthDareSessions.set(interaction.user.id, session);
