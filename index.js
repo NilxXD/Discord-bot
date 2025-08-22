@@ -27,7 +27,7 @@ app.get("/", (req, res) => res.send("Bot is alive!"));
 app.listen(3000, () => console.log("Uptime server running"));
 
 // =========================
- // Discord bot client
+// Discord bot client
 // =========================
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
@@ -39,7 +39,7 @@ const client = new Client({
 const commands = [
   new SlashCommandBuilder().setName("ping").setDescription("Check if bot is alive"),
   new SlashCommandBuilder().setName("hello").setDescription("Say hello!"),
-  new SlashCommandBuilder().setName("funny").setDescription("Get a random joke or meme"),
+  new SlashCommandBuilder().setName("chill").setDescription("Get a random joke or meme"),
   new SlashCommandBuilder().setName("fact").setDescription("Get a random fact"),
   new SlashCommandBuilder().setName("truthdare").setDescription("Play Truth or Dare"),
   new SlashCommandBuilder()
@@ -77,15 +77,25 @@ const truthDareSessions = new Map(); // { userId: { count } }
 // =========================
 // Helper Functions
 // =========================
-async function fetchRedditRandom(subreddit) {
+async function fetchRedditMeme(subreddit) {
   try {
     const res = await fetch(`https://www.reddit.com/r/${subreddit}/random/.json`);
     const data = await res.json();
     const post = data[0].data.children[0].data;
-    return post.url || post.title;
+
+    // Prefer posts that are images
+    if (post.url && (post.url.endsWith(".jpg") || post.url.endsWith(".png") || post.url.endsWith(".gif"))) {
+      return {
+        title: post.title,
+        image: post.url,
+      };
+    }
+
+    // fallback if not image
+    return { title: post.title, image: null };
   } catch (err) {
     console.error(err);
-    return "❌ Could not fetch from Reddit.";
+    return null;
   }
 }
 
@@ -147,22 +157,31 @@ client.on("interactionCreate", async (interaction) => {
       }
       case "hello":
         return interaction.reply("Hello there! 👋");
-      case "funny": {
+      case "chill": {
         const choice = Math.random() < 0.5 ? "joke" : "meme";
 
         if (choice === "meme") {
-          const meme = await fetchRedditRandom("memes");
-          return interaction.reply(meme);
+          const meme = await fetchRedditMeme("memes");
+          if (!meme) return interaction.reply("😅 Couldn't find a meme right now, try again!");
+
+          const embed = new EmbedBuilder()
+            .setTitle(meme.title || "Random Meme")
+            .setColor("#00CC99");
+
+          if (meme.image) embed.setImage(meme.image);
+
+          return interaction.reply({ embeds: [embed] });
         } else {
           const joke = await fetchJSON("https://v2.jokeapi.dev/joke/Any?safe-mode");
-          if (!joke) return interaction.reply("❌ Could not fetch joke.");
+          if (!joke) return interaction.reply("😅 Couldn't come up with a joke right now!");
+
           const text = joke.type === "single" ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
           return interaction.reply(text);
         }
       }
       case "fact": {
         const factData = await fetchJSON("https://uselessfacts.jsph.pl/random.json?language=en");
-        return interaction.reply(factData?.text || "❌ Could not fetch fact.");
+        return interaction.reply(factData?.text || "🤔 Couldn't think of a fact right now!");
       }
       case "truthdare": {
         truthDareSessions.set(interaction.user.id, { count: 0 });
