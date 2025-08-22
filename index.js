@@ -70,6 +70,11 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 const cooldowns = new Map();
 
 // =========================
+// Truth or Dare Session Tracker
+// =========================
+const truthDareSessions = new Map(); // { userId: { count, lastMessageId } }
+
+// =========================
 // Helper Functions
 // =========================
 async function fetchRedditRandom(subreddit) {
@@ -98,13 +103,14 @@ function getRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function buildTruthDareEmbed(user, type) {
+function buildTruthDareEmbed(user, type, count) {
   const isTruth = type === "truth";
   const question = isTruth ? getRandom(truths) : getRandom(dares);
 
   return new EmbedBuilder()
     .setAuthor({ name: `Requested by ${user.username}` })
-    .setDescription(`**${question}**\n\nType: ${isTruth ? "Truth" : "Dare"}`)
+    .setDescription(`**${question}**`)
+    .setFooter({ text: `Type: ${isTruth ? "Truth" : "Dare"} | Card #${count}` })
     .setColor(isTruth ? "#3399FF" : "#FF5733");
 }
 
@@ -159,6 +165,8 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply(factData?.text || "❌ Could not fetch fact.");
       }
       case "truthdare": {
+        truthDareSessions.set(interaction.user.id, { count: 0, lastMessageId: null });
+
         const embed = new EmbedBuilder()
           .setAuthor({ name: `Requested by ${interaction.user.username}` })
           .setTitle("🎭 Truth or Dare")
@@ -184,12 +192,27 @@ client.on("interactionCreate", async (interaction) => {
 
   // Button interactions for Truth/Dare
   if (interaction.isButton()) {
+    await interaction.deferUpdate(); // prevent "interaction failed"
+
     let type = interaction.customId;
     if (type === "random") type = Math.random() > 0.5 ? "truth" : "dare";
 
-    const embed = buildTruthDareEmbed(interaction.user, type);
-    // Instead of updating, send a new message
-    return interaction.channel.send({ embeds: [embed], components: [buildTruthDareButtons()] });
+    const session = truthDareSessions.get(interaction.user.id) || { count: 0, lastMessageId: null };
+    session.count += 1;
+
+    const embed = buildTruthDareEmbed(interaction.user, type, session.count);
+    const newMsg = await interaction.channel.send({
+      embeds: [embed],
+      components: [buildTruthDareButtons()],
+    });
+
+    // Ping old card if it exists
+    if (session.lastMessageId) {
+      await interaction.channel.send(`🔗 Previous card: <https://discord.com/channels/${interaction.guildId}/${interaction.channelId}/${session.lastMessageId}>`);
+    }
+
+    session.lastMessageId = newMsg.id;
+    truthDareSessions.set(interaction.user.id, session);
   }
 });
 
