@@ -10,12 +10,12 @@ import {
   ButtonStyle,
 } from "discord.js";
 import express from "express";
-import fetch from "node-fetch";
 import dotenv from "dotenv";
 
-// import truth & dare JSON
+// import JSON files
 import truths from "./truths.json" assert { type: "json" };
 import dares from "./dares.json" assert { type: "json" };
+import chills from "./chill.json" assert { type: "json" };
 
 dotenv.config();
 
@@ -37,16 +37,14 @@ const client = new Client({
 // Slash Commands Registration
 // =========================
 const commands = [
-  new SlashCommandBuilder().setName("ping").setDescription("Check if bot is alive"),
-  new SlashCommandBuilder().setName("hello").setDescription("Say hello!"),
-  new SlashCommandBuilder().setName("chill").setDescription("Get a random joke or meme"),
+  new SlashCommandBuilder().setName("chill").setDescription("Get a random chill content"),
   new SlashCommandBuilder().setName("fact").setDescription("Get a random fact"),
   new SlashCommandBuilder().setName("truthdare").setDescription("Play Truth or Dare"),
   new SlashCommandBuilder()
     .setName("remind")
-    .setDescription("Set a reminder")
-    .addIntegerOption((option) =>
-      option.setName("time").setDescription("Time in seconds").setRequired(true)
+    .setDescription("Set a reminder (format: HH:MM:SS)")
+    .addStringOption((option) =>
+      option.setName("time").setDescription("Time in HH:MM:SS format").setRequired(true)
     )
     .addStringOption((option) =>
       option.setName("task").setDescription("Task to be reminded of").setRequired(true)
@@ -79,36 +77,6 @@ const truthDareSessions = new Map(); // { userId: { count } }
 // =========================
 // Helper Functions
 // =========================
-async function fetchRedditMeme(subreddit) {
-  try {
-    const res = await fetch(`https://www.reddit.com/r/${subreddit}/random/.json`);
-    const data = await res.json();
-    const post = data[0]?.data?.children[0]?.data;
-
-    if (!post) return null;
-
-    // Only accept safe images
-    if (post.url && (post.url.endsWith(".jpg") || post.url.endsWith(".png") || post.url.endsWith(".gif"))) {
-      return { title: post.title, image: post.url };
-    }
-
-    // fallback: just send the title as text
-    return { title: post.title || "Here’s something funny!", image: null };
-  } catch (err) {
-    console.error(err);
-    return null;
-  }
-}
-
-async function fetchJSON(url) {
-  try {
-    const res = await fetch(url);
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 function getRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -132,6 +100,13 @@ function buildTruthDareButtons() {
   );
 }
 
+function parseTimeString(timeStr) {
+  const parts = timeStr.split(":").map(Number);
+  if (parts.length !== 3) return null;
+  const [hr, min, sec] = parts;
+  return hr * 3600 + min * 60 + sec;
+}
+
 // =========================
 // Interaction Handling
 // =========================
@@ -145,45 +120,19 @@ client.on("interactionCreate", async (interaction) => {
     cooldowns.set(userId, now);
 
     switch (interaction.commandName) {
-      case "ping": {
-        const responses = [
-          "I’m alive! 🚀",
-          "Yes yes, I hear you 👂",
-          "Beep boop 🤖",
-          "Ping received. Pong denied. 🏓❌",
-          "Alive and kicking 💥",
-        ];
-        return interaction.reply(responses[Math.floor(Math.random() * responses.length)]);
-      }
-      case "hello":
-        return interaction.reply("Hello there! 👋");
-
       case "chill": {
-        const choice = Math.random() < 0.5 ? "joke" : "meme";
-
-        if (choice === "meme") {
-          const meme = await fetchRedditMeme("memes");
-          if (!meme) return interaction.reply("😅 Couldn't get a meme right now, try again!");
-
-          const embed = new EmbedBuilder()
-            .setTitle(meme.title || "Random Meme")
-            .setColor("#00CC99");
-
-          if (meme.image) embed.setImage(meme.image);
-
-          return interaction.reply({ embeds: [embed] });
-        } else {
-          const joke = await fetchJSON("https://v2.jokeapi.dev/joke/Any?safe-mode");
-          if (!joke) return interaction.reply("😅 Couldn't think of a joke right now!");
-
-          const text = joke.type === "single" ? joke.joke : `${joke.setup} ... ${joke.delivery}`;
-          return interaction.reply(text);
-        }
+        const content = getRandom(chills);
+        return interaction.reply(content);
       }
 
       case "fact": {
-        const factData = await fetchJSON("https://uselessfacts.jsph.pl/random.json?language=en");
-        return interaction.reply(factData?.text || "🤔 Couldn't come up with a fact right now!");
+        try {
+          const res = await fetch("https://uselessfacts.jsph.pl/random.json?language=en");
+          const factData = await res.json();
+          return interaction.reply(factData?.text || "🤔 Couldn't come up with a fact right now!");
+        } catch {
+          return interaction.reply("🤔 Couldn't fetch a fact right now!");
+        }
       }
 
       case "truthdare": {
@@ -199,15 +148,16 @@ client.on("interactionCreate", async (interaction) => {
       }
 
       case "remind": {
-        const time = interaction.options.getInteger("time");
+        const timeStr = interaction.options.getString("time");
         const task = interaction.options.getString("task");
 
-        if (time <= 0) return interaction.reply("⚠️ Time must be greater than 0 seconds.");
+        const seconds = parseTimeString(timeStr);
+        if (seconds === null || seconds <= 0) return interaction.reply("⚠️ Invalid time format! Use HH:MM:SS.");
 
-        await interaction.reply(`✅ Okay! I will remind you in ${time} seconds: **${task}**`);
+        await interaction.reply(`✅ Okay! I will remind you in ${timeStr}: **${task}**`);
         setTimeout(() => {
           interaction.followUp(`⏰ Reminder: ${task}`);
-        }, time * 1000);
+        }, seconds * 1000);
         break;
       }
     }
