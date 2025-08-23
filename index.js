@@ -12,7 +12,6 @@ import {
 import express from "express";
 import dotenv from "dotenv";
 
-// import JSON files
 import truths from "./truths.json" assert { type: "json" };
 import dares from "./dares.json" assert { type: "json" };
 import chills from "./chill.json" assert { type: "json" };
@@ -55,7 +54,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 (async () => {
   try {
     console.log("Registering slash commands...");
-    // clear and re-register
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
     await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: commands });
     console.log("✅ Slash commands registered!");
@@ -72,7 +70,7 @@ const cooldowns = new Map();
 // =========================
 // Truth or Dare Session Tracker
 // =========================
-const truthDareSessions = new Map(); // { userId: { count } }
+const truthDareSessions = new Map();
 
 // =========================
 // Helper Functions
@@ -92,11 +90,23 @@ function buildTruthDareEmbed(user, type, count) {
     .setColor(isTruth ? "#3399FF" : "#FF5733");
 }
 
-function buildTruthDareButtons() {
+function buildTruthDareButtons(disabled = false) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("truth").setLabel("Truth").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("dare").setLabel("Dare").setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId("random").setLabel("Random").setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder()
+      .setCustomId("truth")
+      .setLabel("Truth")
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId("dare")
+      .setLabel("Dare")
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId("random")
+      .setLabel("Random")
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled)
   );
 }
 
@@ -175,6 +185,17 @@ client.on("interactionCreate", async (interaction) => {
 
     const embed = buildTruthDareEmbed(interaction.user, type, session.count);
 
+    // Disable previous card's buttons
+    try {
+      await interaction.message.edit({
+        embeds: interaction.message.embeds,
+        components: [buildTruthDareButtons(true)], // disable old buttons
+      });
+    } catch (e) {
+      console.error("Failed to disable old buttons:", e);
+    }
+
+    // Send new card
     await interaction.message.reply({
       embeds: [embed],
       components: [buildTruthDareButtons()],
